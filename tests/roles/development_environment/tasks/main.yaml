@@ -63,6 +63,38 @@
       {{ openstack_command }} credential create admin test -f value -c id
   register: before_adoption_credential
 
+- name: Tobiko
+  when: neutron_qe_test | default('false') | bool
+  environment:
+    OS_CLOUD_IP: "{{ standalone_ip | default(edpm_node_ip) }}"
+  block:
+    - name: tobiko installation
+      ansible.builtin.shell: |
+          ssh ${OS_CLOUD_IP} "set -o pipefail && git clone https://github.com/redhat-openstack/tobiko.git"
+
+    - name: upload tobiko-playbook.yaml to the undercloud
+      vars:
+        tobiko_playbook: |
+          - name: Playbook to run tobiko from the undercloud pre-adoption
+            hosts: ${OS_CLOUD_IP}
+            tasks:
+              - name: apply pre-requisites before tests run
+                include_role: tobiko-ir-before-run
+              - name: "download images"
+                include_role: tobiko-download-images
+              - name: "initialize test execution"
+                include_role: tobiko-configure
+              - name: "run tests"
+                include_role: tobiko-run
+      ansible.builtin.copy:
+        mode: a+r
+        content: "{{ tobiko_playbook }}"
+        dest: /home/zuul/tobiko/tobiko-playbook.yaml
+    - name: Run Tobiko from the undercloud
+      ansible.builtin.shell:
+        chdir: /home/zuul/tobiko/
+        cmd: ansible-playbook tobiko-playbook.yaml -e test_workflow=create-resources
+
 - name: create resources script
   when: neutron_qe_test | default('false') | bool
   environment:
